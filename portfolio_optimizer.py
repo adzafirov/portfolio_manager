@@ -3,11 +3,15 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import  date
+import time
 
 # libraries to retrieve and download data
 import requests
 from io import BytesIO
 import yfinance  as yf
+import pandas as pd
+
+import pandas_datareader.data as web
 import base64
 
 # ploting libraries
@@ -52,25 +56,51 @@ def candlestick_chart(dfs, selected_var):
     fig = go.Figure(data=traces, layout=layout)
     return fig
 
-def download_data(data, period='1y'):
+def download_data(data, period="1y", max_retries=3, sleep=1.0, auto_adjust=False):
     dfs = []
-    if isinstance(data, dict):
-        for name, ticker in data.items():
-            ticker_obj = yf.Ticker(ticker)
-            hist = ticker_obj.history(period=period)
-            hist.columns = [f"{name}_{col}" for col in hist.columns]  # Add prefix to the name
-            hist.index = pd.to_datetime(hist.index.map(lambda x: x.strftime('%Y-%m-%d')))
-            dfs.append(hist)
-    elif isinstance(data, list):
-        for ticker in data:
-            ticker_obj = yf.Ticker(ticker)
-            hist = ticker_obj.history(period=period)
-            hist.columns = [f"{ticker}_{col}" for col in hist.columns]  # Add prefix to the name
-            hist.index = pd.to_datetime(hist.index.map(lambda x: x.strftime('%Y-%m-%d')))
-            dfs.append(hist)
 
-    combined_df = pd.concat(dfs, axis=1, join='outer')  # Use join='outer' to handle different time indices
-    return combined_df
+    if isinstance(data, dict):
+        items = list(data.items())  # (name, ticker)
+    elif isinstance(data, list):
+        items = [(t, t) for t in data]  # (prefix, ticker)
+    else:
+        raise TypeError("data must be a dict {name: ticker} or a list of tickers")
+
+    for prefix, ticker in items:
+        hist = pd.DataFrame()
+
+        for attempt in range(1, max_retries + 1):
+            try:
+                # yf.download is often more reliable than Ticker().history
+                hist = yf.download(
+                    ticker,
+                    period=period,
+                    auto_adjust=auto_adjust,
+                    progress=False,
+                    threads=False,
+                )
+                if not hist.empty:
+                    break
+            except Exception:
+                pass
+
+            time.sleep(sleep)
+
+        if hist.empty:
+            print(f"WARNING: No data returned for {ticker} (prefix={prefix}) for period={period}. Skipping.")
+            continue
+
+        # Ensure DatetimeIndex and normalize to date (no timezone/time component)
+        hist.index = pd.to_datetime(hist.index).tz_localize(None).normalize()
+
+        # Prefix columns
+        hist.columns = [f"{prefix}_{col}" for col in hist.columns]
+        dfs.append(hist)
+
+    if not dfs:
+        return pd.DataFrame()
+
+    return pd.concat(dfs, axis=1, join="outer").sort_index()
 
 def upload_file(file):
     df = pd.read_excel(file) if file.name.endswith('xlsx') else pd.read_csv(file)
@@ -665,7 +695,7 @@ commodities_dict = {
     "Sugar #11": "SB=F", "WisdomTree International High D": "GF=F"
 }
 
-selected_timeframes = st.selectbox('Select Timeframe:', ['1d', '5d', '1mo', '3mo', '6mo', '1y', '2y', '5y', '10y', 'ytd', 'max'], index=7)
+selected_timeframes = st.selectbox('Select The Timeframe:', ['1d', '5d', '1mo', '3mo', '6mo', '1y', '2y', '5y', '10y', 'ytd', 'max'], index=7)
 
 assets_list = {'commodities':commodities_dict, 
                'b3_stocks': b3_stocks,

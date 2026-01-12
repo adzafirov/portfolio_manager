@@ -16,4 +16,4 @@ Riskfolio-Lib>=5.0.0
 yahoo_finance>=0.2.35
 ##pypfopt>=1.5.5
 PuLP==2.5.0
-
+pandas-datareader==0.10.0
