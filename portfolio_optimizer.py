@@ -3,12 +3,13 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import  date
+from datetime import datetime, timedelta
 import time
 
 # libraries to retrieve and download data
 import requests
 from io import BytesIO
-import yfinance  as yf
+#import yfinance  as yf
 import pandas as pd
 
 import pandas_datareader.data as web
@@ -56,6 +57,7 @@ def candlestick_chart(dfs, selected_var):
     fig = go.Figure(data=traces, layout=layout)
     return fig
 
+
 def download_data(data, period="1y", max_retries=3, sleep=1.0, auto_adjust=False):
     dfs = []
 
@@ -66,32 +68,63 @@ def download_data(data, period="1y", max_retries=3, sleep=1.0, auto_adjust=False
     else:
         raise TypeError("data must be a dict {name: ticker} or a list of tickers")
 
+    # Convert yfinance-like period strings to a start date for Stooq
+    # Stooq via pandas-datareader works best with explicit date ranges.
+    period_map_days = {
+        "1d": 1, "5d": 5, "1mo": 30, "3mo": 90, "6mo": 180,
+        "1y": 365, "2y": 730, "5y": 1825, "10y": 3650, "ytd": None, "max": None
+    }
+
+    today = datetime.utcnow().date()
+
+    if period == "ytd":
+        start = datetime(today.year, 1, 1).date()
+        end = today
+    elif period == "max":
+        start = None
+        end = None
+    else:
+        days = period_map_days.get(period, 365)  # default to 1y if unknown
+        start = today - timedelta(days=days) if days is not None else None
+        end = today
+
     for prefix, ticker in items:
         hist = pd.DataFrame()
+        symbol = f"{ticker}.US"  # Stooq uses .US suffix for US equities/ETFs
 
         for attempt in range(1, max_retries + 1):
             try:
-                # yf.download is often more reliable than Ticker().history
-                hist = yf.download(
-                    ticker,
-                    period=period,
-                    auto_adjust=auto_adjust,
-                    progress=False,
-                    threads=False,
-                )
-                if not hist.empty:
+                hist = web.DataReader(symbol, "stooq", start=start, end=end)
+
+                # Stooq returns descending by date; sort ascending
+                if hist is not None and not hist.empty:
+                    hist = hist.sort_index()
                     break
             except Exception:
                 pass
 
             time.sleep(sleep)
 
-        if hist.empty:
+        if hist is None or hist.empty:
             print(f"WARNING: No data returned for {ticker} (prefix={prefix}) for period={period}. Skipping.")
             continue
 
+        # Match yfinance-style columns as closely as possible
+        # Stooq typically provides: Open, High, Low, Close, Volume
+        if "Close" in hist.columns and "Adj Close" not in hist.columns:
+            hist["Adj Close"] = hist["Close"]
+
         # Ensure DatetimeIndex and normalize to date (no timezone/time component)
         hist.index = pd.to_datetime(hist.index).tz_localize(None).normalize()
+
+        # Optional: auto_adjust behavior approximation (Stooq doesn't provide splits/dividends adjustments)
+        # If auto_adjust=True, we can at least drop "Adj Close" consistency by setting Close=Adj Close
+        if auto_adjust and "Adj Close" in hist.columns and "Close" in hist.columns:
+            hist["Close"] = hist["Adj Close"]
+
+        # Keep a consistent column set (if present)
+        cols_order = ["Open", "High", "Low", "Close", "Adj Close", "Volume"]
+        hist = hist[[c for c in cols_order if c in hist.columns]]
 
         # Prefix columns
         hist.columns = [f"{prefix}_{col}" for col in hist.columns]
@@ -961,31 +994,52 @@ def generate_combinations(dictionary, assets_per_portfolio, combinations_limit=1
             break
     return combinations
 
-def download_portfolios(data, period='5y'):
+def download_portfolios(data, period="5y"):
     dfs = {}
     tickers_with_errors = []
-    
+
+    # Map yfinance-style periods to days (Stooq needs date ranges)
+    period_map_days = {
+        "1y": 365,
+        "2y": 730,
+        "5y": 1825,
+        "10y": 3650,
+        "max": None
+    }
+
+    today = datetime.utcnow().date()
+    days = period_map_days.get(period, 1825)
+
+    start = today - timedelta(days=days) if days else None
+    end = today
+
+    def fetch_stooq(ticker):
+        symbol = f"{ticker}.US"  # Stooq US ticker format
+        df = web.DataReader(symbol, "stooq", start=start, end=end)
+        df = df.sort_index()
+
+        # Match yfinance-like columns
+        if "Close" in df.columns and "Adj Close" not in df.columns:
+            df["Adj Close"] = df["Close"]
+
+        df.index = pd.to_datetime(df.index).tz_localize(None).normalize()
+        return df
+
     if isinstance(data, dict):
-        for name, ticker in data.items():
-            try:
-                ticker_obj = yf.Ticker(ticker)
-                hist = ticker_obj.history(period=period)
-                hist.columns = [f"{name}_{col}" for col in hist.columns]
-                hist.index = pd.to_datetime(hist.index.map(lambda x: x.strftime('%Y-%m-%d')))
-                dfs[name] = hist
-            except Exception as e:
-                print(f"Error occurred while downloading data for {name}: {e}")
-                tickers_with_errors.append(ticker)
+        items = list(data.items())  # (name, ticker)
     elif isinstance(data, list):
-        for ticker in data:
-            try:
-                ticker_obj = yf.Ticker(ticker)
-                hist = ticker_obj.history(period=period)
-                hist.columns = [f"{ticker}_{col}" for col in hist.columns]
-                hist.index = pd.to_datetime(hist.index.map(lambda x: x.strftime('%Y-%m-%d')))
-                dfs[ticker] = hist
-            except Exception as e:
-                print(f"Error occurred while downloading data for {ticker}: {e}")
-                tickers_with_errors.append(ticker)
-    
+        items = [(t, t) for t in data]
+    else:
+        raise TypeError("data must be a dict {name: ticker} or a list of tickers")
+
+    for name, ticker in items:
+        try:
+            hist = fetch_stooq(ticker)
+            hist.columns = [f"{name}_{col}" for col in hist.columns]
+            dfs[name] = hist
+        except Exception as e:
+            print(f"Error occurred while downloading data for {name}: {e}")
+            tickers_with_errors.append(ticker)
+            time.sleep(0.5)
+
     return dfs, tickers_with_errors
