@@ -1,4 +1,4 @@
-# basic pyhton librarioes
+# basic pyhton libraries
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -366,6 +366,10 @@ def plot_efficient_frontier(simulated_portfolios, risk_free_rate, expected_sharp
     max_sharpe_ratio_value = simulated_portfolios['Sharpe_ratio'].max()
     st.markdown(f'Max Sharpe Ratio: **{max_sharpe_ratio_value:.2f}**')
     st.write(f'Max_sharpe:  {max_sharpe_ratio_value}')
+    max_sharpe_weights = max_sharpe_ratio_portfolio["Weights"]
+    st.write("### Max Sharpe Ratio Weights")
+    for item in max_sharpe_weights.split(","):
+        st.write(item.strip())
     st.plotly_chart(frontier)
     
     
@@ -652,7 +656,47 @@ idx_dict =     {
                     'TA-125': '^TA125.TA', 'Top 40 USD Net TRI Index': '^JN0U.JO', 'NIFTY 50': '^NSEI'
                     }
 
-sp500_dict = {'3M': 'MMM', 'A. O. Smith': 'AOS', 'Abbott': 'ABT', 'AbbVie': 'ABBV', 'Accenture': 'ACN', 'Adobe Inc.': 'ADBE',
+sp500_dict = {'SPY': 'SPY',  "iShares MSCI USA Momentum Factor": 'MTUM',  "iShares MSCI USA Quality Factor": 'QUAL',  "iShares MSCI USA Value Factor": 'VLUE',
+            "iShares MSCI USA Size Factor": 'SIZE',  "iShares MSCI Min Vol USA": 'USMV', "iShares MSCI World": 'URTH',  "iShares MSCI ACWI": 'ACWI',
+             "Consumer Discretionary Select": 'XLY',
+ "Consumer Staples Select": 'XLP',
+ "Energy Select": 'XLE',
+ "Financial Select": 'XLF',
+ "Health Care Select": 'XLV',
+ "Technology Select": 'XLK',
+ "Industrial Select": 'XLI',
+ "Materials Select": 'XLB',
+ "Utilities Select": 'XLU',
+ "Real Estate Select": 'XLRE',
+ "Communication Services Select": 'XLC',
+ "iShares MSCI China": 'MCHI',
+ "iShares China Large-Cap": 'FXI',
+ "KraneShares CSI China Internet": 'KWEB',
+ "Xtrackers Harvest CSI 300": 'ASHR',
+ "Vanguard FTSE EM": 'VWO',
+ "iShares MSCI EM": 'EEM',
+ "iShares Core MSCI EM": 'IEMG',
+ "iShares iBoxx $ Investment Grade Corporate Bond": 'LQD',
+ "iShares iBoxx $ High Yield Corporate Bond": 'HYG',
+ "iShares J.P. Morgan USD EM Bond": 'EMB',
+ "iShares TIPS Bond": 'TIP',
+ "SPDR Bloomberg 1-3 Month T-Bill": 'BIL',
+ "iShares MSCI United Kingdom": 'EWU',
+ "Vanguard FTSE Europe": 'VGK',
+ "iShares MSCI Eurozone": 'EZU',
+ "iShares MSCI Japan": 'EWJ',
+ "WisdomTree Japan Hedged Equity": 'DXJ',
+ "iShares Semiconductor": 'SOXX',
+ "VanEck Semiconductor": 'SMH',
+ "iShares Global Tech": 'IXN',
+ "VanEck Video Gaming & eSports": 'ESPO',
+ "Vanguard Real Estate": 'VNQ',
+ "iShares Global REIT": 'REET',
+ "SPDR Gold Shares": 'GLD',
+ "Invesco DB Commodity Index Tracking": 'DBC',
+ "Invesco Optimum Yield Diversified Commodity Strategy": 'PDBC'}
+
+sp500_dict2 = {'3M': 'MMM', 'A. O. Smith': 'AOS', 'Abbott': 'ABT', 'AbbVie': 'ABBV', 'Accenture': 'ACN', 'Adobe Inc.': 'ADBE',
               'Advanced Micro Devices': 'AMD', 'AES Corporation': 'AES', 'Aflac': 'AFL', 'Agilent Technologies': 'A', 'Air Products and Chemicals': 'APD',
               'Airbnb': 'ABNB', 'Akamai': 'AKAM', 'Albemarle Corporation': 'ALB', 'Alexandria Real Estate Equities': 'ARE', 'Align Technology': 'ALGN',
               'Allegion': 'ALLE', 'Alliant Energy': 'LNT', 'Allstate': 'ALL', 'Google': 'GOOGL', 'Google': 'GOOG',
@@ -732,7 +776,8 @@ selected_timeframes = st.selectbox('Select The Timeframe:', ['1d', '5d', '1mo', 
 
 assets_list = {'commodities':commodities_dict, 
                'b3_stocks': b3_stocks,
-               'SP500': sp500_dict,
+               'High Sharpe Ratio ETFs': sp500_dict,
+               'SP500': sp500_dict2,
                'NASDAC100':nasdaq_dict,
                'indexes': idx_dict,
                'currencies': currencies_dict, 
@@ -994,7 +1039,7 @@ def generate_combinations(dictionary, assets_per_portfolio, combinations_limit=1
             break
     return combinations
 
-def download_portfolios(data, period="5y"):
+def download_portfolios(data, period="1y"):
     dfs = {}
     tickers_with_errors = []
 
